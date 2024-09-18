@@ -17,17 +17,21 @@ print(df.head())
 # Conjuntos
 Lugares = list(range(26))  # 25 cultivos más el hangar (L = {0,1,2,...,25})
 
-# Lista de arcos entre lugares
+# Lista de arcos entre lugares (Con distancia máxima permitida)
+distancia_maxima = 100  # Ajustar este umbral según sea necesario
 A = [(i, j) for i in Lugares for j in Lugares if i != j]
 
 # Distancias entre los lugares (distancia Manhattan)
 q = {(i, j): np.abs(df.iloc[i, 1] - df.iloc[j, 1]) + np.abs(df.iloc[i, 2] - df.iloc[j, 2]) for i, j in A}
 
+# Filtrar arcos con base en la distancia máxima
+A = [(i, j) for i, j in A if q[(i, j)] <= distancia_maxima]
+
 # Crear el modelo
 m = gp.Model('Opti-Drones')
 
 # Variables de decisión: x[i, j] = 1 si hay un viaje de lugar i a lugar j, 0 en caso contrario
-x = m.addVars(Lugares, Lugares, vtype=GRB.BINARY, name='x')
+x = m.addVars(A, vtype=GRB.BINARY, name='x')
 
 # Variables auxiliares u para eliminación de subtours (Miller-Tucker-Zemlin)
 u = m.addVars(Lugares, vtype=GRB.CONTINUOUS, name='u')
@@ -55,14 +59,31 @@ for i in Lugares:
         m.addConstr(gp.quicksum(x[i, j] for j in Lugares if (i, j) in A) == 
                     gp.quicksum(x[j, i] for j in Lugares if (j, i) in A))
 
-# Restricciones MTZ para eliminar subtours
-for i in Lugares:
-    for j in Lugares:
-        if i != j and i != 0 and j != 0:
-            m.addConstr(u[i] - u[j] + (len(Lugares)) * x[i, j] <= len(Lugares) - 1)
+# Activar el uso de restricciones lazy
+m.setParam('LazyConstraints', 1)
 
-# Optimizar el modelo
-m.optimize()
+# Callback para agregar restricciones de eliminación de subtours
+def subtour_elim(model, where):
+    if where == GRB.Callback.MIPSOL:
+        # Obtener la solución en el punto actual
+        sol = model.cbGetSolution(x)
+        
+        # Construir el grafo a partir de la solución
+        G_sol = nx.DiGraph()
+        for i, j in A:
+            if sol[i, j] > 0.5:
+                G_sol.add_edge(i, j)
+        
+        # Buscar los ciclos en la solución actual
+        subtours = list(nx.simple_cycles(G_sol))
+        
+        # Si se encuentran ciclos (subtours), agregamos las restricciones de eliminación
+        for subtour in subtours:
+            if len(subtour) < len(Lugares):
+                model.cbLazy(gp.quicksum(x[i, j] for i in subtour for j in subtour if (i, j) in A) <= len(subtour) - 1)
+
+# Optimizar el modelo con callback para eliminación de subtours
+m.optimize(subtour_elim)
 
 # Imprimir resultados
 if m.status == GRB.OPTIMAL:
