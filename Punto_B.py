@@ -6,47 +6,41 @@ import matplotlib.pyplot as plt
 import gurobipy as gp
 import networkx as nx
 import tabulate as tb
+import math
 
 # Funciones auxiliares
 # Fotos tomadas en un ciclo
 def get_fotos(cycle):
-    fotos_cycle = 0
-    for i in range(len(cycle)):
-        fotos_cycle += Fotos[cycle[i]]
-    return fotos_cycle
+    return sum([Fotos[i] for i in cycle])
 
 # Distancia recorrida en un ciclo
-def get_distancias(cycle):
-    distancias_cycle = 0
-    for i in range(len(cycle)-1):
-        distancias_cycle += q[cycle[i],cycle[i+1]]
-    return
+def get_time(cycle):
+    time = 0
+    for i in range(len(cycle)):
+        if i <= len(cycle)-2:
+            if cycle[i] == 0:
+                time += ((q[cycle[i],cycle[i+1]] / 1000)) / 60
+            else:
+                time += ((q[cycle[i],cycle[i+1]] / 1000) + 90) / 60
+        else:
+            time += ((q[cycle[i],cycle[0]] / 1000) + 90) / 60
+    return time
 
 # Crear grafo
 def createGraph(Lugares, A):
     G = nx.DiGraph()
     G.add_nodes_from(Lugares)
-    for i,j in A:
-        G.add_edge(i,j)
+    G.add_edges_from(A)
     return G
 
 # Desarmar ciclos
-def cutOutCycles(cycles):
+def cutOutCycles(cycles, Lugares):
     for cycle in cycles:
-        arcsInCycle = []
-        for i in cycle:
-            j = i + 1
-            for j in cycle:
-                if i != j:
-                    arcsInCycle.append((i,j))
-        m.addConstr(gp.quicksum(x[i,j] for i,j in arcsInCycle) <= len(cycle)-1)
+        m.addConstr(gp.quicksum(x[i,j] for i in cycle for j in Lugares if i != 0 and j not in cycle) >= 1)
+        m.addConstr(gp.quicksum(x[i,j] for j in cycle for i in Lugares if j != 0 and i not in cycle) >= 1)
 
-def get_active_arcs(x):
-    active_arcs = []
-    for i,j in A:
-        if x[i,j].x > 0.1:
-            active_arcs.append((i,j))
-    return active_arcs
+def get_active_arcs():
+    return [(i,j) for i,j in A if x[i,j].x > 0.1]
     
 
 # MAIN
@@ -60,7 +54,8 @@ df = pd.DataFrame(data)
 Drones = [0,1,2,3,4]
 Lugares = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25]
 Fotos = df['Fotos a tomar'].tolist()
-maxFotos = 500
+maxFotos = 700
+maxTime = 12
 
 # Lista de arcos entre lugares
 A = [(i,j) for i in Lugares for j in Lugares if i != j]
@@ -100,46 +95,55 @@ for i in Lugares:
 
 #Optimizar
 m.optimize()
-G = createGraph(Lugares, get_active_arcs(x))
 
+
+G = createGraph(Lugares, get_active_arcs())
 c = list(nx.simple_cycles(G))
 cycles = [cycle for cycle in c if 0 not in cycle]
-hayCiclos = True if len(cycles) > 0 else False
+hayCiclos = bool(cycles)
 
-while hayCiclos:
-    cutOutCycles(cycles)
+excedeFotos = next((i for i in range(len(c)) if get_fotos(c[i]) > maxFotos), -1)
+print(excedeFotos)
+
+excedeTiempo = next((i for i, cycle in enumerate(c) if get_time(cycle) > maxTime), -1)
+print(excedeTiempo)
+
+while hayCiclos or excedeFotos > -1 or excedeTiempo > -1:
+    if hayCiclos:
+        cutOutCycles(cycles, Lugares)
+    else: 
+        if excedeFotos == -1:
+            proporcionFotos = 0
+        else:
+            proporcionFotos = get_fotos(c[excedeFotos])/maxFotos
+        
+        if excedeTiempo == -1:
+            proporcionTiempo = 0
+        else:
+            proporcionTiempo = get_time(c[excedeTiempo])/maxTime
+
+        if proporcionFotos < proporcionTiempo: 
+            cutArcs = [(i, j) for i in c[excedeFotos] for j in Lugares if (i != j and j not in c[excedeFotos])]
+            m.addConstr(gp.quicksum(x[i,j] * Fotos[i] for i,j in cutArcs) >= math.ceil(get_fotos(c[excedeFotos])/maxFotos))
+            m.addConstr(gp.quicksum(x[j,i] * Fotos[i] for i,j in cutArcs) >= math.ceil(get_fotos(c[excedeFotos])/maxFotos))
+        
+        else:
+            cutArcs = [(i, j) for i in c[excedeTiempo] for j in Lugares if (i != j and j not in c[excedeTiempo])]
+            m.addConstr(gp.quicksum(x[i,j] * q[i,j] for i,j in cutArcs) >= math.ceil(get_time(c[excedeTiempo])/maxTime))
+            m.addConstr(gp.quicksum(x[j,i] * q[i,j] for i,j in cutArcs) >= math.ceil(get_time(c[excedeTiempo])/maxTime))
+
     m.optimize()
-    G = createGraph(Lugares, get_active_arcs(x))
+
+    print('Función Objetivo: ', m.objVal)
+    G = createGraph(Lugares, get_active_arcs())
     c = list(nx.simple_cycles(G))
+    nx.draw(G, with_labels=True)
+    plt.show()
     cycles = [cycle for cycle in c if 0 not in cycle]
     hayCiclos = True if len(cycles) > 0 else False
-
-print('Estatus: ', m.Status)
-print('Función Objetivo: ', m.objVal)
-
-
-excedeFotos = -1
-cycleFotos = 0
-for i in range(len(c)):
-    if get_fotos(c[i]) > maxFotos:
-        excedeFotos = i
-        cycleFotos = get_fotos(c[i])
-
-while excedeFotos > -1:
-    cutArcs = [(i, j) for i in c[excedeFotos] for j in Lugares if (i != j and j not in c[excedeFotos])]
-    m.addConstr(gp.quicksum(x[i,j] * Fotos[i] for i,j in cutArcs) >= cycleFotos/maxFotos)
-    m.optimize()
-    print('Estatus: ', m.Status)
-    print('Función Objetivo: ', m.objVal)
-    G = createGraph(Lugares, get_active_arcs(x))
-    c = list(nx.simple_cycles(G))
-    excedeFotos = -1
-    for i in range(len(c)):
-        if get_fotos(c[i]) > maxFotos:
-            excedeFotos = i
-            cycleFotos = get_fotos(c[i])
-
-    
+    hayCiclos = bool(cycles)
+    excedeFotos = next((i for i, cycle in enumerate(c) if get_fotos(cycle) > maxFotos), -1)
+    excedeTiempo = next((i for i, cycle in enumerate(c) if get_time(cycle) > maxTime), -1)
 
 print('Estatus: ', m.Status)
 print('Función Objetivo: ', m.objVal)
@@ -154,21 +158,12 @@ cyclesS = list(nx.simple_cycles(G))
 
 # Necestio sacar las fotos tomadas en cada cyclo y la distancia recorrida en cada ciclo y dame las fotos en una lista y la idstancias tambien
 fotos = []
-distancias = []
+tiempo = []
 for cycle in cyclesS:
-    fotos_cycle = 0
-    distancias_cycle = 0
-    for i in range(len(cycle)-1):
-        distancias_cycle += q[cycle[i],cycle[i+1]]
-        fotos_cycle += Fotos[cycle[i]]
-        if i == len(cycle)-2:
-            fotos_cycle += Fotos[cycle[i+1]]
-    fotos.append(fotos_cycle)
-    distancias.append(distancias_cycle)
+    fotos.append(get_fotos(cycle))
+    tiempo.append(get_time(cycle))
 
-headers = ['Secuencia', 'Fotos', 'Distancia']
-data = list(zip(cyclesS, fotos, distancias))
+headers = ['Secuencia', 'Fotos', 'Tiempo']
+data = list(zip(cyclesS, fotos, tiempo))
 print(tb.tabulate(data, headers=headers, tablefmt='grid'))
-
-print(q[(24,20)])
 
