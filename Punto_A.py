@@ -7,6 +7,24 @@ import gurobipy as gp
 import networkx as nx
 import tabulate as tb
 
+def get_time(cycle):
+    time = 0
+    for i in range(len(cycle)):
+        if i <= len(cycle)-2:
+            if cycle[i] == 0:
+                time += ((q[cycle[i],cycle[i+1]] / 1000)) / 60
+            else:
+                time += ((q[cycle[i],cycle[i+1]] / 1000) + 90) / 60
+        else:
+            time += ((q[cycle[i],cycle[0]] / 1000) + 90) / 60
+    return time
+
+def get_photos(cycle):
+    photos = 0
+    for i in range(len(cycle)):
+        photos += Fotos[cycle[i]]
+    return photos
+
 # Importar Datos xlsx (Primera fila nombres de columnas)
 data = pd.read_excel('Tarea 2-202420.xlsx', header=1)
 
@@ -92,21 +110,13 @@ cycles = list(nx.simple_cycles(G))
 
 # Necestio sacar las fotos tomadas en cada cyclo y la distancia recorrida en cada ciclo y dame las fotos en una lista y la idstancias tambien
 fotos = []
-distancias = []
+tiempo = []
 for cycle in cycles:
-    fotos_cycle = 0
-    distancias_cycle = 0
-    for i in range(len(cycle)-1):
-        distancias_cycle += q[cycle[i],cycle[i+1]]
-        fotos_cycle += Fotos[cycle[i]]
-        if i == len(cycle)-2:
-            fotos_cycle += Fotos[cycle[i+1]]
-    fotos.append(fotos_cycle)
-    distancias.append(distancias_cycle)
+    fotos.append(get_photos(cycle))
+    tiempo.append(get_time(cycle))
 
-headers = ['Secuencia', 'Fotos', 'Distancia']
-data = list(zip(cycles, fotos, distancias))
+headers = ['Secuencia', 'Fotos', 'Tiempo']
+data = list(zip(cycles, fotos, tiempo))
 print(tb.tabulate(data, headers=headers, tablefmt='grid'))
 
-print(q[(24,20)])
 
