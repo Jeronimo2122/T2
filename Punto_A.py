@@ -43,7 +43,7 @@ Fotos = df['Fotos a tomar'].tolist()
 A = [(i,j) for i in Lugares for j in Lugares if i != j]
 
 # Diccionario de distancia entre lugares (Llave tupla de lugares)
-q = {(i,j): float(abs(df['Calle'][i]-df['Calle'][j]) + abs(df['Carrera'][i]-df['Carrera'][j]))*100 for i,j in A}
+q = {(i,j): float(abs(df['Calle'][i]-df['Calle'][j]) + abs(df['Carrera'][i]-df['Carrera'][j])) for i,j in A}
 
 # Crear Modleo de Optimización
 m = gp.Model('Drones')

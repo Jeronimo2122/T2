@@ -7,6 +7,7 @@ import gurobipy as gp
 import networkx as nx
 import tabulate as tb
 import math
+import time
 
 # Funciones auxiliares
 # Fotos tomadas en un ciclo
@@ -33,18 +34,13 @@ def createGraph(Lugares, A):
     G.add_edges_from(A)
     return G
 
-# Desarmar ciclos
-def cutOutCycles(cycles, Lugares):
-    for cycle in cycles:
-        m.addConstr(gp.quicksum(x[i,j] for i in cycle for j in Lugares if i != 0 and j not in cycle) >= 1)
-        m.addConstr(gp.quicksum(x[i,j] for j in cycle for i in Lugares if j != 0 and i not in cycle) >= 1)
-
 def get_active_arcs():
     return [(i,j) for i,j in A if x[i,j].x > 0.1]
     
 
 # MAIN
 # Importar Datos xlsx (Primera fila nombres de columnas)
+start_time = time.time()
 data = pd.read_excel('Tarea 2-202420.xlsx', header=1)
 
 # Crear DataFrame
@@ -54,7 +50,7 @@ df = pd.DataFrame(data)
 Drones = [0,1,2,3,4]
 Lugares = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25]
 Fotos = df['Fotos a tomar'].tolist()
-maxFotos = 700
+maxFotos = 400
 maxTime = 12
 
 # Lista de arcos entre lugares
@@ -96,58 +92,76 @@ for i in Lugares:
 #Optimizar
 m.optimize()
 
-
+# Genera el grafo de la solucion inicial
 G = createGraph(Lugares, get_active_arcs())
+
+# Saca todos los ciclos del grafo
 c = list(nx.simple_cycles(G))
+
+# Saca los ciclos que no contienen el nodo 0
 cycles = [cycle for cycle in c if 0 not in cycle]
+
+# Verifica si hay ciclos que no contienen el nodo 0
 hayCiclos = bool(cycles)
 
-excedeFotos = next((i for i in range(len(c)) if get_fotos(c[i]) > maxFotos), -1)
-print(excedeFotos)
+# Obtiene el primer ciclo que excede el maximo de fotos, si no hay ninguno retorna None
+excedeFotos = next((i for i in c if get_fotos(i) > maxFotos), None)
 
-excedeTiempo = next((i for i, cycle in enumerate(c) if get_time(cycle) > maxTime), -1)
-print(excedeTiempo)
+# Obtiene el primer ciclo que excede el maximo de tiempo, si no hay ninguno retorna None
+excedeTiempo = next((i for i in c if get_time(i) > maxTime), None)
 
-while hayCiclos or excedeFotos > -1 or excedeTiempo > -1:
+# Ciclo principal iterativo que se ejecuta mientras haya ciclos que no contengan el 0 o algun ciclo exceda el maximo de fotos o tiempo
+while hayCiclos or excedeFotos != None or excedeTiempo != None:
+    # Condicional que verifica si hay ciclos que no contienen el 0
     if hayCiclos:
-        cutOutCycles(cycles, Lugares)
+        for cycle in cycles:
+            fotos = get_fotos(cycle)/maxFotos
+            tiempo = get_time(cycle)/maxTime
+            # Condicional que decide si romper el ciclo por fotos o tiempo
+            if fotos > maxFotos:
+                m.addConstr(gp.quicksum(x[i,j] for i in cycle for j in Lugares if i != 0 and j not in cycle) >= math.ceil(fotos))
+                m.addConstr(gp.quicksum(x[j,i] for i in cycle for j in Lugares if i != 0 and j not in cycle) >= math.ceil(fotos))
+            else:
+                m.addConstr(gp.quicksum(x[i,j] for i in cycle for j in Lugares if i != 0 and j not in cycle) >= math.ceil(tiempo))
+                m.addConstr(gp.quicksum(x[j,i] for i in cycle for j in Lugares if i != 0 and j not in cycle) >= math.ceil(tiempo))
+    # Si no hay ciclos que no contienen el 0 entonces si se verifica los ciclos que excedan el maximo de fotos o tiempo
     else: 
-        if excedeFotos == -1:
+        if excedeFotos == None:
             proporcionFotos = 0
         else:
-            proporcionFotos = get_fotos(c[excedeFotos])/maxFotos
+            proporcionFotos = get_fotos(excedeFotos)/maxFotos
         
-        if excedeTiempo == -1:
+        if excedeTiempo == None:
             proporcionTiempo = 0
         else:
-            proporcionTiempo = get_time(c[excedeTiempo])/maxTime
+            proporcionTiempo = get_time(excedeTiempo)/maxTime
 
-        if proporcionFotos < proporcionTiempo: 
-            cutArcs = [(i, j) for i in c[excedeFotos] for j in Lugares if (i != j and j not in c[excedeFotos])]
-            m.addConstr(gp.quicksum(x[i,j] * Fotos[i] for i,j in cutArcs) >= math.ceil(get_fotos(c[excedeFotos])/maxFotos))
-            m.addConstr(gp.quicksum(x[j,i] * Fotos[i] for i,j in cutArcs) >= math.ceil(get_fotos(c[excedeFotos])/maxFotos))
+        # Condicional que decide si romper el ciclo por fotos o tiempo
+        if proporcionFotos > proporcionTiempo: 
+            m.addConstr(gp.quicksum(x[i,j] for i in excedeFotos for j in Lugares if i != 0 and j not in excedeFotos) >= math.ceil(proporcionFotos))
+            m.addConstr(gp.quicksum(x[j,i] for i in excedeFotos for j in Lugares if i != 0 and j not in excedeFotos) >= math.ceil(proporcionFotos))
         
         else:
-            cutArcs = [(i, j) for i in c[excedeTiempo] for j in Lugares if (i != j and j not in c[excedeTiempo])]
-            m.addConstr(gp.quicksum(x[i,j] * q[i,j] for i,j in cutArcs) >= math.ceil(get_time(c[excedeTiempo])/maxTime))
-            m.addConstr(gp.quicksum(x[j,i] * q[i,j] for i,j in cutArcs) >= math.ceil(get_time(c[excedeTiempo])/maxTime))
+            m.addConstr(gp.quicksum(x[i,j] for i in excedeTiempo for j in Lugares if i != 0 and j not in excedeTiempo) >= math.ceil(proporcionTiempo))
+            m.addConstr(gp.quicksum(x[j,i] for i in excedeTiempo for j in Lugares if i != 0 and j not in excedeTiempo) >= math.ceil(proporcionTiempo))
 
+    #Se optimiza el nuevo modelo con las restricciones agregadas
     m.optimize()
 
     print('Función Objetivo: ', m.objVal)
+
+    # Se recalculan los inputs del ciclo principal para ver si se cumplen todas las restricciones o se vuelve a iterar
     G = createGraph(Lugares, get_active_arcs())
     c = list(nx.simple_cycles(G))
-    nx.draw(G, with_labels=True)
-    plt.show()
     cycles = [cycle for cycle in c if 0 not in cycle]
-    hayCiclos = True if len(cycles) > 0 else False
     hayCiclos = bool(cycles)
-    excedeFotos = next((i for i, cycle in enumerate(c) if get_fotos(cycle) > maxFotos), -1)
-    excedeTiempo = next((i for i, cycle in enumerate(c) if get_time(cycle) > maxTime), -1)
+    excedeFotos = next((i for i in c if get_fotos(i) > maxFotos), None)
+    excedeTiempo = next((i for i in c if get_time(i) > maxTime), None)
 
 print('Estatus: ', m.Status)
 print('Función Objetivo: ', m.objVal)
-
+end_time = time.time()
+print('Tiempo de ejecución: ', end_time - start_time)
 
 #Imprimir grafo de solución
 nx.draw(G, with_labels=True)
