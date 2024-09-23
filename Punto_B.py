@@ -8,6 +8,7 @@ import networkx as nx
 import tabulate as tb
 import math
 import time
+import matplotlib.pyplot as plt
 
 # Funciones auxiliares
 # Fotos tomadas en un ciclo
@@ -110,6 +111,7 @@ excedeFotos = next((i for i in c if get_fotos(i) > maxFotos), None)
 # Obtiene el primer ciclo que excede el maximo de tiempo, si no hay ninguno retorna None
 excedeTiempo = next((i for i in c if get_time(i) > maxTime), None)
 
+FO = []
 # Ciclo principal iterativo que se ejecuta mientras haya ciclos que no contengan el 0 o algun ciclo exceda el maximo de fotos o tiempo
 while hayCiclos or excedeFotos != None or excedeTiempo != None:
     # Condicional que verifica si hay ciclos que no contienen el 0
@@ -147,6 +149,8 @@ while hayCiclos or excedeFotos != None or excedeTiempo != None:
 
     #Se optimiza el nuevo modelo con las restricciones agregadas
     m.optimize()
+    print("FO: ", m.objVal)
+    FO.append(m.objVal)
 
     # Se recalculan los inputs del ciclo principal para ver si se cumplen todas las restricciones o se vuelve a iterar
     G = createGraph(Lugares, get_active_arcs())
@@ -175,4 +179,11 @@ for cycle in cyclesS:
 headers = ['Secuencia', 'Fotos', 'Tiempo']
 data = list(zip(cyclesS, fotos, tiempo))
 print(tb.tabulate(data, headers=headers, tablefmt='grid'))
+
+# Graficar la función objetivo en función de las iteraciones
+plt.plot(FO)
+plt.xlabel('Iteraciones')
+plt.ylabel('Función Objetivo')
+plt.title('Función Objetivo en función de las iteraciones')
+plt.show()
 
