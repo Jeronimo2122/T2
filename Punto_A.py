@@ -43,7 +43,7 @@ Fotos = df['Fotos a tomar'].tolist()
 A = [(i,j) for i in Lugares for j in Lugares if i != j]
 
 # Diccionario de distancia entre lugares (Llave tupla de lugares)
-q = {(i,j): float(abs(df['Calle'][i]-df['Calle'][j]) + abs(df['Carrera'][i]-df['Carrera'][j])) for i,j in A}
+q = {(i,j): float(abs(df['Calle'][i]-df['Calle'][j]) + abs(df['Carrera'][i]-df['Carrera'][j]))*100 for i,j in A}
 
 # Crear Modleo de Optimización
 m = gp.Model('Drones')
@@ -60,7 +60,6 @@ m.setObjective(gp.quicksum(q[i,j]*x[i,j] for i,j in A if i != j), sense=gp.GRB.M
 
 #Restricciones
 #	Todo cultivo debe ser visitado por un dron.
-#∑_(d∈D)▒∑_({j:(j,i)∈A})▒x_dij =1 ; ∀ i∈L 
 for i in Lugares:
     if i != 0:
         m.addConstr(gp.quicksum(x[i,j] for j in Lugares if i != j) == 1)
@@ -70,12 +69,10 @@ for j in Lugares:
         m.addConstr(gp.quicksum(x[i,j] for i in Lugares if i != j) == 1)
 
 #	Se deben utilizar todos los Drones disponibles.
-#∑_((i,j)∈A)▒x_dij ≥1 ; ∀ d∈D 
 m.addConstr(gp.quicksum(x[0,j] for j in Lugares if j != 0) == 5)
 m.addConstr(gp.quicksum(x[i,0] for i in Lugares if i != 0) == 5)
 
 #	No deben existir ciclos entre un par de ubicaciones nisiquiera por drones diferentes.
-#∑_({d:(d,i,j)∈D})▒x_dij ≤1 ; ∀ (i,j)∈A
 for i in Lugares:
     for j in Lugares:
         if i != j:
@@ -107,8 +104,6 @@ for i,j in A:
             G.add_edge(i,j)
 
 cycles = list(nx.simple_cycles(G))
-
-# Necestio sacar las fotos tomadas en cada cyclo y la distancia recorrida en cada ciclo y dame las fotos en una lista y la idstancias tambien
 fotos = []
 tiempo = []
 for cycle in cycles:

@@ -50,14 +50,14 @@ df = pd.DataFrame(data)
 Drones = [0,1,2,3,4]
 Lugares = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25]
 Fotos = df['Fotos a tomar'].tolist()
-maxFotos = 400
+maxFotos = 300
 maxTime = 12
 
 # Lista de arcos entre lugares
 A = [(i,j) for i in Lugares for j in Lugares if i != j]
 
 # Diccionario de distancia entre lugares (Llave tupla de lugares)
-q = {(i,j): float(abs(df['Calle'][i]-df['Calle'][j]) + abs(df['Carrera'][i]-df['Carrera'][j])) for i,j in A}
+q = {(i,j): float(abs(df['Calle'][i]-df['Calle'][j]) + abs(df['Carrera'][i]-df['Carrera'][j]))*100 for i,j in A}
 
 # Crear Modleo de Optimización
 m = gp.Model('Drones')
@@ -148,8 +148,6 @@ while hayCiclos or excedeFotos != None or excedeTiempo != None:
     #Se optimiza el nuevo modelo con las restricciones agregadas
     m.optimize()
 
-    print('Función Objetivo: ', m.objVal)
-
     # Se recalculan los inputs del ciclo principal para ver si se cumplen todas las restricciones o se vuelve a iterar
     G = createGraph(Lugares, get_active_arcs())
     c = list(nx.simple_cycles(G))
@@ -167,10 +165,7 @@ print('Tiempo de ejecución: ', end_time - start_time)
 nx.draw(G, with_labels=True)
 plt.show()
 
-
 cyclesS = list(nx.simple_cycles(G))
-
-# Necestio sacar las fotos tomadas en cada cyclo y la distancia recorrida en cada ciclo y dame las fotos en una lista y la idstancias tambien
 fotos = []
 tiempo = []
 for cycle in cyclesS:
